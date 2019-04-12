@@ -1,0 +1,20 @@
+{
+  "name": "wangmen-crawler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/opteacher/wangmen-crawler.git"
+  },
+  "author": "opteacher",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/opteacher/wangmen-crawler/issues"
+  },
+  "homepage": "https://github.com/opteacher/wangmen-crawler#readme",
+  "dependencies": {}
+}
