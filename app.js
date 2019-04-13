@@ -1,107 +1,140 @@
 Promise = require("bluebird")
-const url = require("url")
 const fs = require("fs")
-const util = require("util")
+const fsPromises = fs.promises
+const url = require("url")
 const puppeteer = require("puppeteer")
-const request = require("request")
-const m3u8 = require("m3u8")
 const m3u8ToMp4 = require("node-m3u8-to-mp4")
+const config = require("./config")
 
-const Chrome = "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe"
-const Url = "https://www.wanmen.org/courses/586d23485f07127674135dbf/lectures/586d23535f0712767415a761"
-const Prefix = "https://media.wanmen.org/"
+class Puppeteer {
 
-async function puppeteerRequest() {
-	const browser = await puppeteer.launch({
-		executablePath: Chrome,
-		headless: true
-	})
-	const page = await browser.newPage()
-	page.setDefaultNavigationTimeout(600000)
-	let m3u8List = []
-	page.on("response", response => {
-		if (response.status() !== 200) {
-			return
-		}
-		let reqUrl = response.url()
-		console.log(`响应来自：${reqUrl}`)
-		if (url.parse(reqUrl).pathname.endsWith(".m3u8")) {
-			m3u8List.push(reqUrl)
-		}
-	})
-	await page.goto(Url)
-	await page.waitFor(5000)
-	await browser.close()
-	return m3u8List
-}
-
-function getM3u8File(m3u8Url) {
-	let fName = url.parse(m3u8Url).pathname.split("/").pop()
-	let fileLoc = `destination/${fName}`
-	request(m3u8Url).pipe(fs.createWriteStream(fileLoc))
-	return fileLoc
-}
-
-function parseM3u8File(fileLoc) {
-	return new Promise(resolve => {
-		let parser = m3u8.createStream()
-		let m3u8File = fs.createReadStream(fileLoc)
-		m3u8File.pipe(parser)
-
-		parser.on("m3u", async m3u8 => {
-			resolve(
-				m3u8.items.PlaylistItem.map(pli => pli.properties.uri)
-			)
+	async start() {
+		this.browser = await puppeteer.launch({
+			executablePath: config.chromium,
+			headless: false
 		})
-	})
-}
-
-function streamToBuffer(stream) {
-	return new Promise((resolve, reject) => {
-		let bufAry = []
-		stream.on("data", data => {
-			bufAry.push(data)
-		})
-		stream.on("end", () => {
-			resolve(Buffer.concat(bufAry))
-		})
-		stream.on("error", err => reject(err))
-	})
-}
-
-async function main() {
-	// 用puppeteer向网站请求，过滤出.m3u8后缀的URL
-	let m3u8List = await puppeteerRequest()
-
-	console.log(m3u8List)
-	for (let m3u8Url of m3u8List) {
-		await m3u8ToMp4(m3u8Url, "output/test.mp4")
-
-		// // 获取m3u8文件并保存
-		// let fLoc = getM3u8File(m3u8Url)
-		//
-		// // 用m3u8模组解析文件
-		// console.log(m3u8Url)
-		// let tsList = await parseM3u8File(fLoc)
-		// console.log(`TS文件总数：${tsList.length}`)
-		//
-		// // 请求并保存TS文件
-		// let tsFiles = []
-		// for (let tsFile of tsList) {
-		// 	let tsFileLoc = `destination/${tsFile}`
-		// 	tsFiles.push(tsFileLoc)
-		// 	request(Prefix + tsFile).pipe(fs.createWriteStream(tsFileLoc))
-		// }
-		//
-		// // 合并TS文件成MP4
-		// for (let tsFile of tsFiles) {
-		// 	console.log(`合并${tsFile}中`)
-		// 	let data = await streamToBuffer(fs.createReadStream(tsFile))
-		// 	console.log(data.length)
-		// 	await Promise.promisify(fs.appendFile)("output/test.mp4", data)
-		// }
+		this.page = await this.browser.newPage()
+		this.page.setDefaultNavigationTimeout(600000)
+		// await this.page.setViewport({
+		// 	width: 1920,
+		// 	height: 1080
+		// })
 	}
-	return Promise.resolve()
+
+	async close() {
+		return await this.browser.close()
+	}
+
+	async signin() {
+		console.log(`跳转${config.pages.home}……`)
+		await this.page.goto(config.pages.home, {
+			waitUntil: "networkidle2" // 等待网络状态为空闲的时候才继续执行
+		})
+
+		// 点击登陆
+		console.log("点击登陆")
+		let signinBtn = await this.page.waitForXPath("//a[starts-with(@class,'header__inlist-sign-in--')]")
+		await signinBtn.tap()
+
+		// 点击并输入用户名和密码
+		console.log("输入用户名……")
+		let signinForm = await this.page.waitForXPath("//div[starts-with(@class,'authentication__form--')]")
+		let account = await signinForm.$("input[name='account']")
+		await account.tap()
+		await account.type(config.log_info.account)
+
+		console.log("输入密码……")
+		let password = await signinForm.$("input[name='password']")
+		await password.tap()
+		await password.type(config.log_info.password)
+
+		// 点击登陆
+		console.log("提交登陆")
+		let signinBtnContainer = await this.page.waitForXPath("//div[starts-with(@class,'sign-in-form__submit-button--')]")
+		let loginBtn = await signinBtnContainer.$("button")
+		await loginBtn.click()
+
+		console.log("登陆成功！")
+		await this.page.waitFor(5000)
+	}
+
+	async listCourses() {
+		console.log(`跳转${config.pages.paid}……`)
+		await this.page.goto(config.pages.paid, {
+			waitUntil: "networkidle2" // 等待网络状态为空闲的时候才继续执行
+		})
+
+		console.log("等待读取课程列表……")
+		let courses = []
+		let courseLstContainer = await this.page.waitForXPath("//div[starts-with(@class,'account__content--')]//ul")
+		let index = 1
+		for (let course of await courseLstContainer.$$("li")) {
+			console.log(`收集第${index}门课程路径`)
+			courses.push(await course.$eval("a", a => {
+				return {
+					title: a.innerText.split("\n")[0],
+					href: a.href
+				}
+			}))
+			index++
+		}
+
+		console.log("课程读取完毕")
+		await this.page.waitFor(5000)
+		return Promise.resolve(courses)
+	}
+
+	async downloadVideo(course) {
+		// 创建课程文件夹
+		let csPath = `output/${course.title}`
+		fsPromises.access(csPath, fs.constants.F_OK).catch(async () => {
+			await fsPromises.mkdir(csPath)
+		})
+
+		// 初次跳转到课程视频页面
+		await this.page.goto(course.href, {
+			waitUntil: "networkidle2" // 等待网络状态为空闲的时候才继续执行
+		})
+
+		// 过滤出所有讲课记录链接
+		await this.page.waitForXPath("//li[starts-with(@class,'components__child-item--')]")
+		for (let lecture of await this.page.$x("//div[contains(@class,'components__child-index-name--')]")) {
+			// 依次点击
+			await lecture.click()
+
+			// 收集页面加载过程中的m3u8文件请求
+			let m3u8List = []
+			this.page.on("response", response => {
+				if (response.status() !== 200) {
+					return
+				}
+				let reqUrl = response.url()
+				console.log(`响应来自：${reqUrl}`)
+				if (url.parse(reqUrl).pathname.endsWith(".m3u8")) {
+					m3u8List.push(reqUrl)
+				}
+			})
+			await this.page.waitFor(5000)
+
+			// 讲课视频文件的名字
+			let csItem = await this.page.waitForXPath("//div[contains(@class,'components__active--')]")
+			let lName = await (await csItem.getProperty("title")).jsonValue()
+
+			// m3u8转成mp4
+			console.log(m3u8List)
+			for (let m3u8Url of m3u8List) {
+				await m3u8ToMp4(m3u8Url, `output/${course.title}/${lName}.mp4`)
+			}
+		}
+	}
 }
 
-main()
+(async () => {
+	let ppr = new Puppeteer()
+	await ppr.start()
+	await ppr.signin()
+	for (let csUrl of await ppr.listCourses()) {
+		await ppr.downloadVideo(csUrl)
+	}
+	return ppr.close()
+})()
