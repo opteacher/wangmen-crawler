@@ -15,10 +15,6 @@ class Puppeteer {
 		})
 		this.page = await this.browser.newPage()
 		this.page.setDefaultNavigationTimeout(600000)
-		// await this.page.setViewport({
-		// 	width: 1920,
-		// 	height: 1080
-		// })
 	}
 
 	/***
@@ -123,25 +119,30 @@ class Puppeteer {
 		for (let lecture of await this.page.$x("//div[contains(@class,'components__child-index-name--')]")) {
 			// 讲课视频文件的名字
 			let lName = await (await lecture.getProperty("title")).jsonValue()
-			let chapter = await lecture.$x("//span[starts-with(@class,'components__index--')]")
-			for (let c of chapter) {
-				console.log(await this.page.evaluate(el => el.innerHTML, c))
-			}
-			// console.log(chapter.length)
-			// console.log(await this.page.evaluate(el => el.innerHTML, chapter[0]))
+			// 检查名字中是否有文件夹分隔符
+			lName = lName.replace("/", "|")
+			let chapter = await lecture.$$eval("span", spans => {
+				for (let span of spans) {
+					if (span.className && span.className.startsWith("components__index--")) {
+						return span.innerHTML
+					}
+				}
+			})
+			lName = `${chapter} ${lName}`
 
 			// 检查视频是否已经存在
 			let outputPath = `output/${course.title}/${lName}.mp4`
 			try {
 				let mp4Stat = await fsPromises.stat(outputPath)
-				// mp4文件大于56M，则判定已经存在，不需要下载
-				if (mp4Stat.size > 56320304) {
-					console.log(`${outputPath}已经存在，跳过下载`)
+				// mp4文件大于26M，则判定已经存在，不需要下载
+				if (mp4Stat.size > 26320304) {
+					console.log(`已经存在，跳过下载${outputPath}`)
 					continue
 				}
 			} catch (e) {}
 
 			// 依次点击
+			console.log(`将要跳转到：${lName}`)
 			do {
 				await lecture.click()
 			} while (!(await this.downloadVideo(outputPath)))
