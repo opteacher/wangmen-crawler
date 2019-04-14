@@ -11,7 +11,7 @@ class Puppeteer {
 	async start() {
 		this.browser = await puppeteer.launch({
 			executablePath: config.chromium,
-			headless: false
+			headless: true
 		})
 		this.page = await this.browser.newPage()
 		this.page.setDefaultNavigationTimeout(600000)
@@ -21,10 +21,18 @@ class Puppeteer {
 		// })
 	}
 
+	/***
+	 * 关闭浏览器
+	 * @returns {Promise<*>}
+	 */
 	async close() {
 		return await this.browser.close()
 	}
 
+	/***
+	 * 登陆
+	 * @returns {Promise<void>}
+	 */
 	async signin() {
 		console.log(`跳转${config.pages.home}……`)
 		await this.page.goto(config.pages.home, {
@@ -58,10 +66,14 @@ class Puppeteer {
 		await this.page.waitFor(5000)
 	}
 
+	/***
+	 * 列出购买的课程
+	 * @returns {Promise<*>}
+	 */
 	async listCourses() {
 		console.log(`跳转${config.pages.paid}……`)
 		await this.page.goto(config.pages.paid, {
-			waitUntil: "networkidle2" // 等待网络状态为空闲的时候才继续执行
+			waitUntil: "networkidle2"
 		})
 
 		console.log("等待读取课程列表……")
@@ -84,48 +96,75 @@ class Puppeteer {
 		return Promise.resolve(courses)
 	}
 
-	async downloadVideo(course) {
+	/***
+	 * 下载所有讲课视频
+	 * @param course
+	 * @returns {Promise<void>}
+	 */
+	async downloadCourse(course) {
 		// 创建课程文件夹
 		let csPath = `output/${course.title}`
-		fsPromises.access(csPath, fs.constants.F_OK).catch(async () => {
+		try {
+			await fsPromises.access(csPath, fs.constants.F_OK)
+		} catch (e) {
 			await fsPromises.mkdir(csPath)
-		})
+		}
 
 		// 初次跳转到课程视频页面
 		await this.page.goto(course.href, {
-			waitUntil: "networkidle2" // 等待网络状态为空闲的时候才继续执行
+			waitUntil: "networkidle2"
 		})
 
 		// 过滤出所有讲课记录链接
 		await this.page.waitForXPath("//li[starts-with(@class,'components__child-item--')]")
 		for (let lecture of await this.page.$x("//div[contains(@class,'components__child-index-name--')]")) {
-			// 依次点击
-			await lecture.click()
-
-			// 收集页面加载过程中的m3u8文件请求
-			let m3u8List = []
-			this.page.on("response", response => {
-				if (response.status() !== 200) {
-					return
-				}
-				let reqUrl = response.url()
-				console.log(`响应来自：${reqUrl}`)
-				if (url.parse(reqUrl).pathname.endsWith(".m3u8")) {
-					m3u8List.push(reqUrl)
-				}
-			})
-			await this.page.waitFor(5000)
-
 			// 讲课视频文件的名字
-			let csItem = await this.page.waitForXPath("//div[contains(@class,'components__active--')]")
-			let lName = await (await csItem.getProperty("title")).jsonValue()
+			let lName = await (await lecture.getProperty("title")).jsonValue()
 
-			// m3u8转成mp4
-			console.log(m3u8List)
-			for (let m3u8Url of m3u8List) {
-				await m3u8ToMp4(m3u8Url, `output/${course.title}/${lName}.mp4`)
+			// 检查视频是否已经存在
+			let outputPath = `output/${course.title}/${lName}.mp4`
+			try {
+				let mp4Stat = await fsPromises.stat(outputPath)
+				// mp4文件大于56M，则判定已经存在，不需要下载
+				if (mp4Stat.size > 56320304) {
+					console.log(`${outputPath}已经存在，跳过下载`)
+					continue
+				}
+			} catch (e) {}
+
+			// 依次点击
+			do {
+				await lecture.click()
+			} while (!(await this.downloadVideo(outputPath)))
+		}
+	}
+
+	async downloadVideo(outputPath) {
+		// 收集页面加载过程中的m3u8文件请求
+		let m3u8List = []
+		this.page.on("response", response => {
+			if (response.status() !== 200) {
+				return
+			}
+			let reqUrl = response.url()
+			// console.log(`响应来自：${reqUrl}`)
+			if (url.parse(reqUrl).pathname.endsWith(".m3u8")) {
+				m3u8List.push(reqUrl)
+			}
+		})
+		await this.page.waitFor(5000)
+
+		// m3u8转成mp4
+		console.log(m3u8List)
+		for (let m3u8Url of m3u8List) {
+			try {
+				await m3u8ToMp4(m3u8Url, outputPath)
+				return true
+			} catch (e) {
+				console.error(e)
 			}
 		}
+		return false
 	}
 }
 
@@ -134,7 +173,7 @@ class Puppeteer {
 	await ppr.start()
 	await ppr.signin()
 	for (let csUrl of await ppr.listCourses()) {
-		await ppr.downloadVideo(csUrl)
+		await ppr.downloadCourse(csUrl)
 	}
 	return ppr.close()
 })()
