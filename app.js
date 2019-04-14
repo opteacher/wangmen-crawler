@@ -92,7 +92,7 @@ class Puppeteer {
 		}
 
 		console.log("课程读取完毕")
-		await this.page.waitFor(5000)
+		await this.page.waitFor(2000)
 		return Promise.resolve(courses)
 	}
 
@@ -104,6 +104,7 @@ class Puppeteer {
 	async downloadCourse(course) {
 		// 创建课程文件夹
 		let csPath = `output/${course.title}`
+		console.log(`创建课程文件夹：${csPath}`)
 		try {
 			await fsPromises.access(csPath, fs.constants.F_OK)
 		} catch (e) {
@@ -111,15 +112,23 @@ class Puppeteer {
 		}
 
 		// 初次跳转到课程视频页面
+		console.log(`跳转：${course.href}`)
 		await this.page.goto(course.href, {
 			waitUntil: "networkidle2"
 		})
 
 		// 过滤出所有讲课记录链接
+		console.log("扫描讲课列表")
 		await this.page.waitForXPath("//li[starts-with(@class,'components__child-item--')]")
 		for (let lecture of await this.page.$x("//div[contains(@class,'components__child-index-name--')]")) {
 			// 讲课视频文件的名字
 			let lName = await (await lecture.getProperty("title")).jsonValue()
+			let chapter = await lecture.$x("//span[starts-with(@class,'components__index--')]")
+			for (let c of chapter) {
+				console.log(await this.page.evaluate(el => el.innerHTML, c))
+			}
+			// console.log(chapter.length)
+			// console.log(await this.page.evaluate(el => el.innerHTML, chapter[0]))
 
 			// 检查视频是否已经存在
 			let outputPath = `output/${course.title}/${lName}.mp4`
@@ -139,6 +148,11 @@ class Puppeteer {
 		}
 	}
 
+	/***
+	 * 下载讲课视频
+	 * @param outputPath
+	 * @returns {Promise<boolean>}
+	 */
 	async downloadVideo(outputPath) {
 		// 收集页面加载过程中的m3u8文件请求
 		let m3u8List = []
