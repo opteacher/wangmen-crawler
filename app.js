@@ -120,7 +120,7 @@ class Puppeteer {
 			// 讲课视频文件的名字
 			let lName = await (await lecture.getProperty("title")).jsonValue()
 			// 检查名字中是否有文件夹分隔符
-			lName = lName.replace("/", "|")
+			lName = lName.replace("/", ",")
 			let chapter = await lecture.$$eval("span", spans => {
 				for (let span of spans) {
 					if (span.className && span.className.startsWith("components__index--")) {
