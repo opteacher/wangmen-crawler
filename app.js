@@ -59,7 +59,7 @@ class Puppeteer {
 		await loginBtn.click()
 
 		console.log("登陆成功！")
-		await this.page.waitFor(5000)
+		await this.page.waitFor(2000)
 	}
 
 	/***
@@ -167,7 +167,7 @@ class Puppeteer {
 				m3u8List.push(reqUrl)
 			}
 		})
-		await this.page.waitFor(5000)
+		await this.page.waitFor(10000)
 
 		// m3u8转成mp4
 		console.log(m3u8List)
