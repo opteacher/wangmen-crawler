@@ -7,8 +7,20 @@ const m3u8ToMp4 = require("node-m3u8-to-mp4")
 const config = require("./config")
 
 let params = process.argv.slice(2)
-for (var i = 0; i < params.length; i++) {
-	
+for (let i = 0; i < params.length; i++) {
+	switch (params[i].toLowerCase()) {
+	case "-i":
+		if (i === params.length - 1) {
+			console.log("请指定要下载的课程")
+			process.exit(-1)
+		} else {
+			if (!config.identified_courses) {
+				config.identified_courses = []
+			}
+			config.identified_courses.push(params[i + 1])
+		}
+		break
+	}
 }
 
 class Puppeteer {
@@ -91,6 +103,18 @@ class Puppeteer {
 			}))
 			index++
 		}
+		if (config.identified_courses.length !== 0) {
+			let cssTmp = []
+			console.log("指定下载：[")
+			for (let course of courses) {
+				if (config.identified_courses.includes(course.title)) {
+					console.log(`\t${course.title},`)
+					cssTmp.push(course)
+				}
+			}
+			console.log("]")
+			courses = cssTmp
+		}
 
 		console.log("课程读取完毕")
 		await this.page.waitFor(2000)
@@ -144,7 +168,8 @@ class Puppeteer {
 					console.log(`已经存在，跳过下载${outputPath}`)
 					continue
 				}
-			} catch (e) {}
+			} catch (e) {
+			}
 
 			// 依次点击
 			console.log(`将要跳转到：${lName}`)
