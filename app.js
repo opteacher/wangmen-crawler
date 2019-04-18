@@ -6,6 +6,11 @@ const puppeteer = require("puppeteer")
 const m3u8ToMp4 = require("node-m3u8-to-mp4")
 const config = require("./config")
 
+let params = process.argv.slice(2)
+for (var i = 0; i < params.length; i++) {
+	
+}
+
 class Puppeteer {
 
 	async start() {
